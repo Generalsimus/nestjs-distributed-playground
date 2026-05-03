@@ -6,20 +6,16 @@ import path from 'path';
 import { config } from './config';
 import { ProtoValidationInterceptor } from '@/src/interceptor/proto-validate';
 import { Reflector } from '@nestjs/core';
-import { UserService } from '@/shared/proto/gen/ts/user/v1/user_pb';
-import { RmqTraceInterceptor } from '@/src/interceptor/rmq-trace';
 import { OtelLogger } from '@/src/otel-logger';
-import { DLX_EXCHANGE, setupRmqDlx } from '@/src/rmq-dlx-setup';
+import { JetstreamStrategy } from '@horizon-republic/nestjs-jetstream';
 
 async function bootstrap() {
   const protoDir = path.join(process.cwd(), './shared/proto');
 
-  await setupRmqDlx(config.RABBITMQ_URL);
-
   const app = await NestFactory.create(AppModule);
   app.useLogger(new OtelLogger());
 
-  app.useGlobalInterceptors(new RmqTraceInterceptor(), new ProtoValidationInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(new ProtoValidationInterceptor(app.get(Reflector)));
   app.connectMicroservice<MicroserviceOptions>(
     {
       transport: Transport.GRPC,
@@ -41,34 +37,16 @@ async function bootstrap() {
     { inheritAppConfig: true },
   );
 
-  // app.connectMicroservice<MicroserviceOptions>(
-  //   {
-  //     transport: Transport.RMQ,
-  //     options: {
-  //       urls: [config.RABBITMQ_URL],
-  //       queue: UserService.name,
-  //       exchange: 'user.events',
-  //       exchangeType: 'topic',
-  //       noAck: false,
-  //       queueOptions: { durable: true, arguments: { 'x-dead-letter-exchange': DLX_EXCHANGE } },
-  //     },
-  //   },
-  //   { inheritAppConfig: true },
-  // );
-
-  app.connectMicroservice<MicroserviceOptions>(
-    {
-      transport: Transport.NATS,
-      options: {
-        servers: [config.NATS_URL],
-        user: config.NATS_USER,
-        pass: config.NATS_PASS,
-        queue: UserService.name,
-      },
-    },
+  app.connectMicroservice(
+    { strategy: app.get(JetstreamStrategy) },
     { inheritAppConfig: true },
   );
 
+  // 3. CRITICAL FOR SAFETY: Enable graceful shutdowns
+  // If Docker restarts this container, this ensures NestJS tells NATS 
+  // "Stop sending me messages, I am shutting down!" before it dies.
+  app.enableShutdownHooks();
+ 
   await app.startAllMicroservices();
 }
 void bootstrap();

@@ -6,7 +6,7 @@ services:
     build:
       context: ../
       dockerfile: ./gateway/Dockerfile
-    #   target: dev
+    # target: dev
     ports:
       - '3000:3000'
     environment:
@@ -59,33 +59,16 @@ services:
         - path: ../services/user-services
           action: sync+restart
           target: /app
-        - path: .../proto
-          action: sync+restart
-          target: /app/proto
-        - path: .../services/user-services/package.json
+        - path: ../services/user-services/package.json
           action: rebuild
-
-  nats-ui:
-    image: ghcr.io/nats-nui/nui:latest
-    ports:
-      - "31311:31311"
-    volumes:
-      - ./.temp/nui:/data
-    networks:
-      - microservices-net
-    restart: unless-stopped
-    depends_on:
-      nats:
-        condition: service_healthy
 
   nats:
     image: nats:alpine
-    command: ["-c", "/etc/nats/nats.conf"]
+    command: ["-js", "-sd", "/data/jetstream", "-m", "8222", "--user", "appuser", "--pass", "appsecret"]
     ports:
       - "4222:4222"
       - "8222:8222"
     volumes:
-      - ./nats/nats.conf:/etc/nats/nats.conf:ro
       - ./.temp/nats:/data/jetstream
     networks:
       - microservices-net
@@ -95,6 +78,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  nats-ui:
+    image: ghcr.io/nats-nui/nui:latest
+    command: ["--nats-cli-contexts", "/app/contexts"]
+    ports:
+      - "31311:31311"
+    volumes:
+      - ./.temp/nui:/data
+      - ./nats-contexts:/app/contexts:ro
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:management
@@ -123,6 +121,7 @@ services:
       - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml
     networks:
       - microservices-net
+
 networks:
   microservices-net:
     driver: bridge

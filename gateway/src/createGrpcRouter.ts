@@ -80,7 +80,7 @@ export const createGrpcRouter = (binPath: string, addresses: Record<string, stri
                 'grpc.keepalive_permit_without_calls': 1,
             });
 
-            // ✅ FIX 1: Watch the channel state ONCE per client, not per method
+            // ✅ Watch the channel state ONCE per client, not per method
             watchChannelState(grpcClient, address);
 
             for (const method of service.methods) {

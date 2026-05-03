@@ -1,33 +1,44 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ClientsModule, Transport } from '@nestjs/microservices';
 import { config } from './config';
 import { UserService } from '@/shared/proto/gen/ts/user/v1/user_pb';
+import { JetstreamModule } from '@horizon-republic/nestjs-jetstream';
+
+const SEC = 1_000_000_000n; // 1 second in nanoseconds (BigInt for safety)
+const toNs = (s: number) => Number(BigInt(s) * SEC);
+
 @Module({
   imports: [
-    ClientsModule.register([
-      // {
-      //   name: UserService.name,
-      //   transport: Transport.RMQ,
-      //   options: {
-      //     urls: [config.RABBITMQ_URL],
-      //     queue: UserService.name,
-      //     exchange: 'user.events',
-      //     exchangeType: 'topic',
-      //     queueOptions: { durable: true },
-      //   },
-      // }, 
-      {
-        name: UserService.name,
-        transport: Transport.NATS,
-        options: {
-          servers: [config.NATS_URL],
-          user: config.NATS_USER,
-          pass: config.NATS_PASS,
+    JetstreamModule.forRoot({
+      servers: [config.NATS_URL],
+      name: UserService.name,
+      connectionOptions: {
+        user: config.NATS_USER,
+        pass: config.NATS_PASS,
+      },
+      events: {
+        stream: {
+          discard: 'old',
+          max_msgs: 1000,
+        },
+        consumer: {
+          // after 5 total delivery attempts the message is dead-lettered
+          max_deliver: 5,
+          // NATS will redeliver if no ack within 30 s
+          ack_wait: toNs(30),
+          // exponential backoff between retries: 5s → 15s → 30s → 60s
+          backoff: [toNs(5), toNs(15), toNs(30), toNs(60)],
         },
       },
-    ]),
+      dlq: {
+        stream: {
+          // keep dead-lettered messages for 30 days
+          max_age: toNs(30 * 24 * 60 * 60),
+        },
+      },
+    }),
+    JetstreamModule.forFeature({ name: UserService.name }),
   ],
   controllers: [AppController],
   providers: [AppService],

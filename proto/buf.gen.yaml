@@ -24,7 +24,6 @@ plugins:
       - outputJsonMethods=false
       - outputClientImpl=false
       - exportCommonSymbols=false
-      # --- Recommended Additions ---
       - addGrpcMetadata=true
       - useOptionals=true
       - returnObservable=true

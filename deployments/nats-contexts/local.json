@@ -1,0 +1,6 @@
+{
+    "description": "My Local NATS",
+    "url": "nats://nats:4222",
+    "user": "appuser",
+    "password": "appsecret"
+}
