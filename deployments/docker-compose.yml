@@ -1,0 +1,128 @@
+services:
+  # ── HTTP API Gateway ──────────────────────────────────────────────
+  # Routes are discovered at startup by reading (google.api.http)
+  # annotations directly from the proto files — no hand-written routes.
+  gateway:
+    build:
+      context: ../
+      dockerfile: ./gateway/Dockerfile
+    #   target: dev
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      PROTO_DIR: /app/proto
+      USER_SERVICE_URL: user-service:5001
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      - user-service
+      - jaeger
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    develop:
+      watch:
+        - path: ../gateway/src
+          action: sync+restart
+          target: /app/src
+        - path: ../proto
+          action: sync+restart
+          target: /app/proto
+        - path: ../gateway/package.json
+          action: rebuild
+
+  # ── gRPC Microservices ────────────────────────────────────────────
+  user-service:
+    build:
+      context: ../
+      dockerfile: ./services/user-services/Dockerfile
+      # target: dev
+    expose:
+      - '5001'
+    environment:
+      NODE_ENV: development
+      PORT: '5001'
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      RABBITMQ_URL: amqp://rabbitmq:aasdasdasdasdhashdashdjashduasshdaisu@rabbitmq:5672
+      NATS_URL: nats://nats:4222
+      NATS_USER: appuser
+      NATS_PASS: appsecret
+    depends_on:
+      - jaeger
+      - rabbitmq
+      - nats
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    develop:
+      watch:
+        - path: ../services/user-services
+          action: sync+restart
+          target: /app
+        - path: .../proto
+          action: sync+restart
+          target: /app/proto
+        - path: .../services/user-services/package.json
+          action: rebuild
+
+  nats-ui:
+    image: ghcr.io/nats-nui/nui:latest
+    ports:
+      - "31311:31311"
+    volumes:
+      - ./.temp/nui:/data
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  nats:
+    image: nats:alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - ./.temp/nats:/data/jetstream
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO/dev/null http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:management
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbitmq
+      RABBITMQ_DEFAULT_PASS: aasdasdasdasdhashdashdjashduasshdaisu
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./.temp/rabbitmq:/var/lib/rabbitmq
+    restart: unless-stopped
+    networks:
+      - microservices-net
+    depends_on:
+      - jaeger
+    
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: jaeger
+    command: ["--config", "/etc/jaeger/jaeger-config.yaml"]
+    ports:
+      - "16686:16686"
+    volumes:
+      - ./jaeger/ui-config.json:/etc/jaeger/ui-config.json
+      - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml
+    networks:
+      - microservices-net
+networks:
+  microservices-net:
+    driver: bridge

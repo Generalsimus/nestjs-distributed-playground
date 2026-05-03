@@ -1,0 +1,30 @@
+version: v2
+plugins:
+
+  # 1. OPENAPI (Swagger) - Generates your REST docs
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: ./proto/gen/openapi
+    opt:
+      - allow_merge=true
+      - merge_file_name=api
+
+  # 2. PROTOBUF-ES - Generates DescMessage schemas for @bufbuild/protovalidate
+  - remote: buf.build/bufbuild/es
+    out: ./proto/gen/ts
+    opt:
+      - target=ts
+
+  # 3. TS-PROTO - Generates NestJS native code
+  - remote: buf.build/community/stephenh-ts-proto
+    out: ./proto/gen/ts
+    opt:
+      - nestJs=true
+      - lowerCaseServiceMethods=true
+      - outputEncodeMethods=false
+      - outputJsonMethods=false
+      - outputClientImpl=false
+      - exportCommonSymbols=false
+      # --- Recommended Additions ---
+      - addGrpcMetadata=true
+      - useOptionals=true
+      - returnObservable=true

@@ -1,0 +1,42 @@
+# jaeger-config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+extensions:
+  jaeger_storage:
+    backends:
+      memory_storage:
+        memory:
+          max_traces: 100000
+    metric_backends:
+      prometheus_storage:
+        prometheus:
+          endpoint: http://prometheus:9090
+          normalize_calls: true
+          normalize_duration: true
+  jaeger_query:
+    storage:
+      traces: memory_storage
+      metrics: prometheus_storage
+    ui:
+      config_file: /etc/jaeger/ui-config.json
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: memory_storage
+
+service:
+  extensions: [jaeger_storage, jaeger_query]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]

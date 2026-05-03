@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "user/v1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+
+service UserService {
+
+  // Retrieves a user by their unique user ID. 
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}"
+    };
+  }
+
+  // Emits a notification event for a user action. 
+  rpc UserNotify(UserNotifyRequest) returns (UserNotifyResponse) {}
+}
+
+message GetUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message User {
+  string user_id = 1;
+  string email   = 2;
+  string name    = 3;
+  int32  age     = 4;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message UserNotifyRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string message = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message UserNotifyResponse {}
