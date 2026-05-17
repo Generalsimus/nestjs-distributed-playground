@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: nats
+    static_configs:
+      - targets: ["nats-exporter:7777"]
+
+  - job_name: cockroachdb
+    metrics_path: /_status/vars
+    scheme: http
+    static_configs:
+      - targets: ["cockroachdb:8080"]
+    metric_relabel_configs:
+      # keep only the most useful metric families to reduce cardinality
+      - source_labels: [__name__]
+        regex: >-
+          sql_(query|txn|exec|select|insert|update|delete|distsql).*|
+          sql_service_latency.*|
+          sql_statements_total|
+          sql_errors_total|
+          sql_conn.*|
+          sys_(cpu|mem|fd|uptime).*|
+          rocksdb_.*|
+          liveness_.*|
+          ranges_.*|
+          capacity.*
+        action: keep

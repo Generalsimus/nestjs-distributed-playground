@@ -7,6 +7,7 @@ import { status } from '@grpc/grpc-js';
 import { Observable, throwError } from 'rxjs';
 import { Reflector } from '@nestjs/core';
 import { DescMessage, MessageShape } from '@bufbuild/protobuf';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 
 export const VALIDATE_KEY = 'grpc-validate:schema';
 export const Validate = (schema: DescMessage) => SetMetadata(VALIDATE_KEY, schema);
@@ -31,7 +32,11 @@ export class ProtoValidationInterceptor implements NestInterceptor {
 
     const schema = this.reflector.get<DescMessage>(VALIDATE_KEY, context.getHandler());
     if (!schema) {
-      return throwError(() => new RpcException({ code: status.INVALID_ARGUMENT, message: 'Validation schema not found for this method' }));
+      const err = new RpcException({ code: status.INVALID_ARGUMENT, message: 'Validation schema not found for this method' });
+      const span = trace.getActiveSpan();
+      span?.recordException(err);
+      span?.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      return throwError(() => err);
     }
 
     const raw = context.switchToRpc().getData<JsonObject>();
@@ -39,15 +44,20 @@ export class ProtoValidationInterceptor implements NestInterceptor {
     const result = validator.validate(schema, message);
 
     if (result.kind === 'invalid') {
-      const error = new RpcException({
-        code: status.INVALID_ARGUMENT,
-        message: result.violations.map((v) => v.toString() + ` (at ${pathToString(v.field)})`).join('; '),
-      });
-      return throwError(() => error);
+      const msg = result.violations.map((v) => v.toString() + ` (at ${pathToString(v.field)})`).join('; ');
+      const err = new RpcException({ code: status.INVALID_ARGUMENT, message: msg });
+      const span = trace.getActiveSpan();
+      span?.recordException(err);
+      span?.setStatus({ code: SpanStatusCode.ERROR, message: msg });
+      return throwError(() => err);
     }
 
     if (result.kind === 'error') {
-      return throwError(() => new RpcException({ code: status.INTERNAL, message: result.error.message }));
+      const err = new RpcException({ code: status.INTERNAL, message: result.error.message });
+      const span = trace.getActiveSpan();
+      span?.recordException(err);
+      span?.setStatus({ code: SpanStatusCode.ERROR, message: result.error.message });
+      return throwError(() => err);
     }
 
     return next.handle();

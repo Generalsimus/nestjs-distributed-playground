@@ -37,16 +37,13 @@ async function bootstrap() {
     { inheritAppConfig: true },
   );
 
-  app.connectMicroservice(
-    { strategy: app.get(JetstreamStrategy) },
-    { inheritAppConfig: true },
-  );
+  app.connectMicroservice({ strategy: app.get(JetstreamStrategy) }, { inheritAppConfig: true });
 
   // 3. CRITICAL FOR SAFETY: Enable graceful shutdowns
-  // If Docker restarts this container, this ensures NestJS tells NATS 
+  // If Docker restarts this container, this ensures NestJS tells NATS
   // "Stop sending me messages, I am shutting down!" before it dies.
   app.enableShutdownHooks();
- 
+
   await app.startAllMicroservices();
 }
 void bootstrap();

@@ -47,10 +47,12 @@ services:
       NATS_URL: nats://nats:4222
       NATS_USER: appuser
       NATS_PASS: appsecret
+      DATABASE_URL: postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
     depends_on:
       - jaeger
       - rabbitmq
       - nats
+      - cockroachdb
     networks:
       - microservices-net
     restart: unless-stopped
@@ -78,6 +80,42 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  nats-box:
+    image: natsio/nats-box:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until nats --server nats://appuser:appsecret@nats:4222 account info > /dev/null 2>&1; do
+          echo "waiting for NATS..."; sleep 2
+        done
+        nats --server nats://appuser:appsecret@nats:4222 stream add ev-mirror \
+          --mirror UserService__microservice_ev-stream \
+          --retention limits \
+          --max-age 24h \
+          --storage file \
+          --replicas 1 \
+          --defaults 2>&1 | grep -v "^$" || echo "ev-mirror already exists"
+        echo "NATS ready. Use: docker compose exec nats-box nats --server nats://appuser:appsecret@nats:4222 <command>"
+        sleep infinity
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    command: ["-port", "7777", "-varz", "-connz", "-subz", "-jsz=all", "http://nats:8222"]
+    expose:
+      - "7777"
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      nats:
+        condition: service_healthy
 
   nats-ui:
     image: ghcr.io/nats-nui/nui:latest
@@ -121,6 +159,63 @@ services:
       - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml
     networks:
       - microservices-net
+
+  # ── CockroachDB ───────────────────────────────────────────────────
+  cockroachdb:
+    image: cockroachdb/cockroach:latest-v24.3
+    command: start-single-node --insecure --advertise-addr=cockroachdb --http-addr=0.0.0.0:8080
+    ports:
+      - "26257:26257"   # SQL (postgres-compatible)
+      - "8080:8080"     # Admin UI — statements, slow queries, index recommendations
+    volumes:
+      - ./.temp/cockroachdb:/cockroach/cockroach-data
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health?ready=1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Prometheus — scrapes CockroachDB /_status/vars ────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./.temp/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+
+  # ── Grafana — dashboards + slow-query / metrics analysis ──────────
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"     # 3000 is taken by gateway
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./.temp/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
 
 networks:
   microservices-net:

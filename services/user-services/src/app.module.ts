@@ -19,8 +19,8 @@ const toNs = (s: number) => Number(BigInt(s) * SEC);
       },
       events: {
         stream: {
-          discard: 'old',
-          max_msgs: 1000,
+          // library defaults: WorkQueue retention, max_msgs=50M, max_age=7d, 5GB max
+          // do NOT set max_msgs here — 1000 would silently drop unprocessed messages
         },
         consumer: {
           // after 5 total delivery attempts the message is dead-lettered
@@ -43,4 +43,4 @@ const toNs = (s: number) => Number(BigInt(s) * SEC);
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}
